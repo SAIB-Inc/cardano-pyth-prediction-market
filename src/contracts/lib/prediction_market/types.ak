@@ -1,8 +1,6 @@
 use cardano/assets.{PolicyId}
 use cardano/transaction.{OutputReference}
 
-// ── Oracle types (same as Levvy.V3) ──────────────────────────────────────────
-
 /// price: raw integer price
 /// name: feed identifier (e.g., "BTC/USD")
 /// timestamp: POSIX ms
@@ -58,7 +56,6 @@ pub type MarketAction {
   Bet { direction: BetDirection, amount: Int }
   Resolve
   Claim { burn_amount: Int }
-  Cancel
 }
 
 pub type MintAction {
