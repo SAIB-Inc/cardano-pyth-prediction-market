@@ -3,8 +3,8 @@ use cardano/assets
 use cardano/transaction.{InlineDatum, Output, OutputReference, Transaction}
 use prediction_market/market_validation.{validate_claim}
 use prediction_market/mocks.{
-  mock_market_datum, mock_market_hash, mock_market_input, mock_script_address,
-  mock_transaction, mock_tx_id,
+  mock_market_datum, mock_market_hash, mock_market_input, mock_market_value,
+  mock_script_address, mock_transaction, mock_tx_id,
 }
 use prediction_market/types.{MarketDatum, No, Yes}
 
@@ -63,18 +63,27 @@ fn claim_tx(
       [
         Output {
           address: mock_script_address(),
-          value: assets.from_lovelace(datum.total_ada - payout),
+          value: mock_market_value(datum.total_ada - payout),
           datum: InlineDatum(new_datum),
           reference_script: None,
         },
       ]
     }
 
+  let minted =
+    if is_last_claim {
+      assets.zero
+        |> assets.add(mock_market_hash, winning_token, -burn_amount)
+        |> assets.add(mock_market_hash, "", -1)
+    } else {
+      assets.zero |> assets.add(mock_market_hash, winning_token, -burn_amount)
+    }
+
   Transaction {
     ..mock_transaction(),
     inputs: [mock_market_input(datum.total_ada)],
     outputs: outputs,
-    mint: assets.zero |> assets.add(mock_market_hash, winning_token, -burn_amount),
+    mint: minted,
     validity_range: interval.between(300_000, 400_000),
   }
 }
@@ -138,6 +147,48 @@ test claim_wrong_token_burned_fails() fail {
       outputs: [
         Output {
           address: mock_script_address(),
+          value: mock_market_value(datum.total_ada - 50_000_000),
+          datum: InlineDatum(
+            MarketDatum {
+              ..datum,
+              total_ada: datum.total_ada - 50_000_000,
+              total_yes_minted: datum.total_yes_minted - 50_000_000,
+            },
+          ),
+          reference_script: None,
+        },
+      ],
+      mint: // Burning NO tokens instead of YES
+      assets.zero
+        |> assets.add(mock_market_hash, "NO", -50_000_000),
+      validity_range: interval.between(300_000, 400_000),
+    }
+  validate_claim(datum, 50_000_000, mock_spend_ref(), tx)
+}
+
+test claim_full_without_state_thread_burn_fails() fail {
+  let datum = resolved_yes_datum()
+  let tx =
+    Transaction {
+      ..mock_transaction(),
+      inputs: [mock_market_input(datum.total_ada)],
+      outputs: [],
+      mint: assets.zero
+        |> assets.add(mock_market_hash, "YES", -datum.total_yes_minted),
+      validity_range: interval.between(300_000, 400_000),
+    }
+  validate_claim(datum, datum.total_yes_minted, mock_spend_ref(), tx)
+}
+
+test claim_partial_missing_state_thread_in_output_fails() fail {
+  let datum = resolved_yes_datum()
+  let tx =
+    Transaction {
+      ..mock_transaction(),
+      inputs: [mock_market_input(datum.total_ada)],
+      outputs: [
+        Output {
+          address: mock_script_address(),
           value: assets.from_lovelace(datum.total_ada - 50_000_000),
           datum: InlineDatum(
             MarketDatum {
@@ -149,9 +200,8 @@ test claim_wrong_token_burned_fails() fail {
           reference_script: None,
         },
       ],
-      // Burning NO tokens instead of YES
       mint: assets.zero
-        |> assets.add(mock_market_hash, "NO", -50_000_000),
+        |> assets.add(mock_market_hash, "YES", -50_000_000),
       validity_range: interval.between(300_000, 400_000),
     }
   validate_claim(datum, 50_000_000, mock_spend_ref(), tx)

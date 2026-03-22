@@ -4,14 +4,72 @@ use aiken/collection/pairs
 use aiken/interval.{Finite}
 use cardano/address.{Script}
 use cardano/assets
-use cardano/transaction.{InlineDatum, OutputReference, Transaction, Withdraw,
-  find_input}
+use cardano/transaction.{
+  InlineDatum, OutputReference, Transaction, Withdraw, find_input,
+}
 use prediction_market/types.{MarketDatum, No, SignedPriceFeed, Yes}
 
 // Token names
 pub const yes_token: ByteArray = "YES"
 
 pub const no_token: ByteArray = "NO"
+
+pub const state_thread_token: ByteArray = ""
+
+fn has_state_thread(value: assets.Value, policy_id: assets.PolicyId) -> Bool {
+  assets.quantity_of(value, policy_id, state_thread_token) == 1
+}
+
+fn has_no_market_policy_mint(
+  policy_id: assets.PolicyId,
+  tx: Transaction,
+) -> Bool {
+  let mint_dict = tx.mint |> assets.tokens(policy_id)
+  dict.foldl(mint_dict, True, fn(_asset_name, _qty, _acc) { False })
+}
+
+fn only_mints_market_token(
+  policy_id: assets.PolicyId,
+  token_name: ByteArray,
+  amount: Int,
+  tx: Transaction,
+) -> Bool {
+  let mint_dict = tx.mint |> assets.tokens(policy_id)
+
+  assets.quantity_of(tx.mint, policy_id, token_name) == amount && dict.foldl(
+    mint_dict,
+    True,
+    fn(asset_name, qty, acc) {
+      acc && asset_name == token_name && qty == amount
+    },
+  )
+}
+
+fn only_burns_market_token(
+  policy_id: assets.PolicyId,
+  token_name: ByteArray,
+  amount: Int,
+  burn_state_thread: Bool,
+  tx: Transaction,
+) -> Bool {
+  let mint_dict = tx.mint |> assets.tokens(policy_id)
+
+  assets.quantity_of(tx.mint, policy_id, token_name) == amount && if burn_state_thread {
+    assets.quantity_of(tx.mint, policy_id, state_thread_token) == -1
+  } else {
+    assets.quantity_of(tx.mint, policy_id, state_thread_token) == 0
+  } && dict.foldl(
+    mint_dict,
+    True,
+    fn(asset_name, qty, acc) {
+      acc && if asset_name == token_name {
+        qty == amount
+      } else {
+        burn_state_thread && asset_name == state_thread_token && qty == -1
+      }
+    },
+  )
+}
 
 // ─── Bet validation ──────────────────────────────────────────────────────────
 
@@ -36,7 +94,7 @@ pub fn validate_bet(
   let (tokens_out, new_datum) =
     when direction is {
       Yes -> {
-        let tokens = datum.yes_reserve - datum.k / (datum.no_reserve + amount)
+        let tokens = datum.yes_reserve - datum.k / ( datum.no_reserve + amount )
         expect tokens > 0
         let new =
           MarketDatum {
@@ -49,7 +107,7 @@ pub fn validate_bet(
         (tokens, new)
       }
       No -> {
-        let tokens = datum.no_reserve - datum.k / (datum.yes_reserve + amount)
+        let tokens = datum.no_reserve - datum.k / ( datum.yes_reserve + amount )
         expect tokens > 0
         let new =
           MarketDatum {
@@ -65,7 +123,10 @@ pub fn validate_bet(
 
   // Find continuing output at script address with updated datum
   expect Some(spend_input) = find_input(tx.inputs, spend_out_ref)
+  expect Script(market_policy_id) =
+    spend_input.output.address.payment_credential
   let script_address = spend_input.output.address
+  expect has_state_thread(spend_input.output.value, market_policy_id)
 
   expect Some(continuing_output) =
     tx.outputs
@@ -75,6 +136,7 @@ pub fn validate_bet(
   expect InlineDatum(out_datum) = continuing_output.datum
   expect output_market_datum: MarketDatum = out_datum
   expect output_market_datum == new_datum
+  expect has_state_thread(continuing_output.value, market_policy_id)
 
   // Verify correct tokens are minted
   let expected_token_name =
@@ -83,13 +145,13 @@ pub fn validate_bet(
       No -> no_token
     }
 
-  let minted =
-    tx.mint
-      |> assets.tokens(datum.token_policy)
-      |> dict.get(expected_token_name)
-
-  expect Some(minted_qty) = minted
-  expect minted_qty == tokens_out
+  expect
+    only_mints_market_token(
+      market_policy_id,
+      expected_token_name,
+      tokens_out,
+      tx,
+    )
 
   // Verify ADA increased by bet amount
   let input_lovelace = assets.lovelace_of(spend_input.output.value)
@@ -114,8 +176,7 @@ pub fn validate_resolve(
   expect lower >= datum.resolution_time
 
   // Oracle withdrawal must exist (withdraw-0 pattern)
-  expect
-    pairs.has_key(tx.withdrawals, Script(datum.oracle_script_hash))
+  expect pairs.has_key(tx.withdrawals, Script(datum.oracle_script_hash))
 
   // Oracle state NFT must be in reference inputs
   expect
@@ -146,19 +207,17 @@ pub fn validate_resolve(
     }
 
   // Creator must sign (hackathon simplification)
-  expect
-    tx.extra_signatories |> list.has(datum.creator)
+  expect tx.extra_signatories |> list.has(datum.creator)
 
   // Verify continuing output
   expect Some(spend_input) = find_input(tx.inputs, spend_out_ref)
+  expect Script(market_policy_id) =
+    spend_input.output.address.payment_credential
   let script_address = spend_input.output.address
+  expect has_state_thread(spend_input.output.value, market_policy_id)
 
   let expected_datum =
-    MarketDatum {
-      ..datum,
-      resolved: True,
-      winning_side: Some(winning_side),
-    }
+    MarketDatum { ..datum, resolved: True, winning_side: Some(winning_side) }
 
   expect Some(continuing_output) =
     tx.outputs
@@ -167,6 +226,8 @@ pub fn validate_resolve(
   expect InlineDatum(out_datum) = continuing_output.datum
   expect output_market_datum: MarketDatum = out_datum
   expect output_market_datum == expected_datum
+  expect has_state_thread(continuing_output.value, market_policy_id)
+  expect has_no_market_policy_mint(market_policy_id, tx)
 
   // Value must be preserved (no ADA removed during resolve)
   let input_lovelace = assets.lovelace_of(spend_input.output.value)
@@ -199,18 +260,12 @@ pub fn validate_claim(
   // Calculate payout
   let payout = burn_amount * datum.total_ada / total_winning_minted
 
-  // Verify winning tokens are burned
-  let burned =
-    tx.mint
-      |> assets.tokens(datum.token_policy)
-      |> dict.get(winning_token)
-
-  expect Some(burned_amount) = burned
-  expect burned_amount == -burn_amount
-
   // Verify continuing output with reduced values
   expect Some(spend_input) = find_input(tx.inputs, spend_out_ref)
+  expect Script(market_policy_id) =
+    spend_input.output.address.payment_credential
   let script_address = spend_input.output.address
+  expect has_state_thread(spend_input.output.value, market_policy_id)
 
   let expected_datum =
     when winning_side is {
@@ -231,6 +286,14 @@ pub fn validate_claim(
   // If all winning tokens are claimed, no continuing output needed
   if total_winning_minted == burn_amount {
     // Last claimer — gets whatever remains, no continuing output required
+    expect
+      only_burns_market_token(
+        market_policy_id,
+        winning_token,
+        -burn_amount,
+        True,
+        tx,
+      )
     True
   } else {
     expect Some(continuing_output) =
@@ -240,6 +303,15 @@ pub fn validate_claim(
     expect InlineDatum(out_datum) = continuing_output.datum
     expect output_market_datum: MarketDatum = out_datum
     expect output_market_datum == expected_datum
+    expect has_state_thread(continuing_output.value, market_policy_id)
+    expect
+      only_burns_market_token(
+        market_policy_id,
+        winning_token,
+        -burn_amount,
+        False,
+        tx,
+      )
 
     // Verify ADA decreased by exactly payout
     let input_lovelace = assets.lovelace_of(spend_input.output.value)
@@ -248,19 +320,6 @@ pub fn validate_claim(
 
     True
   }
-}
-
-// ─── Cancel validation ───────────────────────────────────────────────────────
-
-pub fn validate_cancel(datum: MarketDatum, tx: Transaction) -> Bool {
-  // Market must not be resolved
-  expect !datum.resolved
-
-  // Creator must sign
-  expect
-    tx.extra_signatories |> list.has(datum.creator)
-
-  True
 }
 
 // ─── Mint validation ─────────────────────────────────────────────────────────
@@ -278,20 +337,32 @@ pub fn validate_mint_tokens(
     tx.inputs
       |> list.any(
           fn(input) {
-            input.output.address.payment_credential == Script(policy_id)
+            input.output.address.payment_credential == Script(policy_id) && has_state_thread(
+              input.output.value,
+              policy_id,
+            )
           },
         )
 
-  or {
-    one_shot_consumed,
-    has_market_spend,
+  let minted_state_thread_qty =
+    assets.quantity_of(tx.mint, policy_id, state_thread_token)
+
+  let mint_dict = tx.mint |> assets.tokens(policy_id)
+  let all_market_mints_are_positive =
+    dict.foldl(mint_dict, True, fn(_asset_name, qty, acc) { acc && qty > 0 })
+
+  expect all_market_mints_are_positive
+
+  if one_shot_consumed {
+    expect minted_state_thread_qty == 1
+    True
+  } else {
+    expect minted_state_thread_qty == 0
+    has_market_spend
   }
 }
 
-pub fn validate_burn_tokens(
-  policy_id: assets.PolicyId,
-  tx: Transaction,
-) -> Bool {
+pub fn validate_burn_tokens(policy_id: assets.PolicyId, tx: Transaction) -> Bool {
   let mint_dict = tx.mint |> assets.tokens(policy_id)
   dict.foldl(mint_dict, True, fn(_key, qty, acc) { acc && qty < 0 })
 }

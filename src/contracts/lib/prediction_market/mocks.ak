@@ -2,8 +2,9 @@ use aiken/collection/dict
 use aiken/interval
 use cardano/address.{Address, Script, VerificationKey}
 use cardano/assets
-use cardano/transaction.{InlineDatum, Input, Output, OutputReference,
-  Transaction}
+use cardano/transaction.{
+  InlineDatum, Input, Output, OutputReference, Transaction,
+}
 use prediction_market/types.{MarketDatum, OracleDatum}
 
 // ── Mock constants ───────────────────────────────────────────────────────────
@@ -92,6 +93,11 @@ pub fn mock_oracle_ref_input() -> Input {
   }
 }
 
+pub fn mock_market_value(lovelace: Int) -> assets.Value {
+  assets.from_lovelace(lovelace)
+    |> assets.add(mock_market_hash, "", 1)
+}
+
 pub fn mock_market_input(lovelace: Int) -> Input {
   Input {
     output_reference: OutputReference {
@@ -100,7 +106,7 @@ pub fn mock_market_input(lovelace: Int) -> Input {
     },
     output: Output {
       address: mock_script_address(),
-      value: assets.from_lovelace(lovelace),
+      value: mock_market_value(lovelace),
       datum: InlineDatum(mock_market_datum()),
       reference_script: None,
     },
@@ -110,7 +116,7 @@ pub fn mock_market_input(lovelace: Int) -> Input {
 pub fn mock_market_output(datum: MarketDatum, lovelace: Int) -> Output {
   Output {
     address: mock_script_address(),
-    value: assets.from_lovelace(lovelace),
+    value: mock_market_value(lovelace),
     datum: InlineDatum(datum),
     reference_script: None,
   }

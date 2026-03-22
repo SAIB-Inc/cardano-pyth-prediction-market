@@ -3,8 +3,8 @@ use cardano/assets
 use cardano/transaction.{InlineDatum, Output, OutputReference, Transaction}
 use prediction_market/market_validation.{validate_bet}
 use prediction_market/mocks.{
-  mock_market_datum, mock_market_hash, mock_market_input, mock_script_address,
-  mock_transaction, mock_tx_id,
+  mock_market_datum, mock_market_hash, mock_market_input, mock_market_value,
+  mock_script_address, mock_transaction, mock_tx_id,
 }
 use prediction_market/types.{MarketDatum, No, Yes}
 
@@ -13,7 +13,7 @@ use prediction_market/types.{MarketDatum, No, Yes}
 /// Build a valid bet transaction for YES direction
 fn bet_yes_tx(datum: MarketDatum, amount: Int) -> Transaction {
   // Calculate expected tokens: yes_reserve - k / (no_reserve + amount)
-  let tokens_out = datum.yes_reserve - datum.k / (datum.no_reserve + amount)
+  let tokens_out = datum.yes_reserve - datum.k / ( datum.no_reserve + amount )
 
   let new_datum =
     MarketDatum {
@@ -30,7 +30,7 @@ fn bet_yes_tx(datum: MarketDatum, amount: Int) -> Transaction {
     outputs: [
       Output {
         address: mock_script_address(),
-        value: assets.from_lovelace(datum.total_ada + amount),
+        value: mock_market_value(datum.total_ada + amount),
         datum: InlineDatum(new_datum),
         reference_script: None,
       },
@@ -42,7 +42,7 @@ fn bet_yes_tx(datum: MarketDatum, amount: Int) -> Transaction {
 
 /// Build a valid bet transaction for NO direction
 fn bet_no_tx(datum: MarketDatum, amount: Int) -> Transaction {
-  let tokens_out = datum.no_reserve - datum.k / (datum.yes_reserve + amount)
+  let tokens_out = datum.no_reserve - datum.k / ( datum.yes_reserve + amount )
 
   let new_datum =
     MarketDatum {
@@ -59,7 +59,7 @@ fn bet_no_tx(datum: MarketDatum, amount: Int) -> Transaction {
     outputs: [
       Output {
         address: mock_script_address(),
-        value: assets.from_lovelace(datum.total_ada + amount),
+        value: mock_market_value(datum.total_ada + amount),
         datum: InlineDatum(new_datum),
         reference_script: None,
       },
@@ -114,15 +114,19 @@ test bet_after_resolution_time_fails() fail {
   let tx =
     Transaction {
       ..bet_yes_tx(datum, 50_000_000),
-      // validity range past resolution time
-      validity_range: interval.between(300_001, 400_000),
+      validity_range: // validity range past resolution time
+      interval.between(300_001, 400_000),
     }
   validate_bet(datum, Yes, 50_000_000, mock_spend_ref(), tx)
 }
 
 test bet_on_resolved_market_fails() fail {
   let datum =
-    MarketDatum { ..mock_market_datum(), resolved: True, winning_side: Some(Yes) }
+    MarketDatum {
+      ..mock_market_datum(),
+      resolved: True,
+      winning_side: Some(Yes),
+    }
   let tx = bet_yes_tx(datum, 50_000_000)
   validate_bet(datum, Yes, 50_000_000, mock_spend_ref(), tx)
 }
@@ -141,7 +145,8 @@ test bet_wrong_mint_amount_fails() fail {
 test bet_wrong_datum_update_fails() fail {
   let datum = mock_market_datum()
   // Build tx with wrong output datum (reserves not updated)
-  let tokens_out = datum.yes_reserve - datum.k / (datum.no_reserve + 50_000_000)
+  let tokens_out =
+    datum.yes_reserve - datum.k / ( datum.no_reserve + 50_000_000 )
   let tx =
     Transaction {
       ..mock_transaction(),
@@ -149,7 +154,7 @@ test bet_wrong_datum_update_fails() fail {
       outputs: [
         Output {
           address: mock_script_address(),
-          value: assets.from_lovelace(datum.total_ada + 50_000_000),
+          value: mock_market_value(datum.total_ada + 50_000_000),
           datum: InlineDatum(datum),
           reference_script: None,
         },
@@ -162,7 +167,8 @@ test bet_wrong_datum_update_fails() fail {
 
 test bet_insufficient_ada_fails() fail {
   let datum = mock_market_datum()
-  let tokens_out = datum.yes_reserve - datum.k / (datum.no_reserve + 50_000_000)
+  let tokens_out =
+    datum.yes_reserve - datum.k / ( datum.no_reserve + 50_000_000 )
   let new_datum =
     MarketDatum {
       ..datum,
@@ -179,7 +185,37 @@ test bet_insufficient_ada_fails() fail {
         Output {
           address: mock_script_address(),
           // Not enough ADA added
-          value: assets.from_lovelace(datum.total_ada + 1),
+          value: mock_market_value(datum.total_ada + 1),
+          datum: InlineDatum(new_datum),
+          reference_script: None,
+        },
+      ],
+      mint: assets.zero |> assets.add(mock_market_hash, "YES", tokens_out),
+      validity_range: interval.between(0, datum.resolution_time),
+    }
+  validate_bet(datum, Yes, 50_000_000, mock_spend_ref(), tx)
+}
+
+test bet_missing_state_thread_in_output_fails() fail {
+  let datum = mock_market_datum()
+  let tokens_out =
+    datum.yes_reserve - datum.k / ( datum.no_reserve + 50_000_000 )
+  let new_datum =
+    MarketDatum {
+      ..datum,
+      yes_reserve: datum.yes_reserve - tokens_out,
+      no_reserve: datum.no_reserve + 50_000_000,
+      total_yes_minted: datum.total_yes_minted + tokens_out,
+      total_ada: datum.total_ada + 50_000_000,
+    }
+  let tx =
+    Transaction {
+      ..mock_transaction(),
+      inputs: [mock_market_input(datum.total_ada)],
+      outputs: [
+        Output {
+          address: mock_script_address(),
+          value: assets.from_lovelace(datum.total_ada + 50_000_000),
           datum: InlineDatum(new_datum),
           reference_script: None,
         },
