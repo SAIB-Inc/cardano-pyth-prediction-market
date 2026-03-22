@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../Chrysalis/src/Chrysalis.Codec/Chrysalis.Codec.csproj" />
+    <ProjectReference Include="../../../Chrysalis/src/Chrysalis.Tx/Chrysalis.Tx.csproj" />
+    <ProjectReference Include="../../../Chrysalis/src/Chrysalis.Wallet/Chrysalis.Wallet.csproj" />
+    <ProjectReference Include="../../../Chrysalis/src/Chrysalis.Crypto/Chrysalis.Crypto.csproj" />
+    <ProjectReference Include="../../../Chrysalis/src/Chrysalis.Codec.CodeGen/Chrysalis.Codec.CodeGen.csproj"
+      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="../contracts/plutus.json" />
+  </ItemGroup>
+
+</Project>
