@@ -79,7 +79,7 @@ public class MarketService(WalletService wallet, IPriceService priceService, App
         };
 
         // Build the mint redeemer (MintTokens = constr(0))
-        var mintRedeemer = new CborConstr0();
+        var mintRedeemer = new PlutusVoid();
 
         var txBuilder = new TxBuilder(wallet.Provider);
 
@@ -162,7 +162,7 @@ public class MarketService(WalletService wallet, IPriceService priceService, App
         // Mint tokens
         string tokenName = betYes ? "YES" : "NO";
         var mintAssets = new Dictionary<string, long> { [tokenName] = tokensOut };
-        var mintRedeemer = new CborConstr0(); // MintTokens
+        var mintRedeemer = new PlutusVoid(); // MintTokens
 
         long newTotalAda = ((PlutusInt64)datum.TotalAda).Value + amount;
 

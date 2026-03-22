@@ -46,6 +46,10 @@ public class WalletService
     public async Task<string> SignAndSubmit(ITransaction unsigned)
     {
         ITransaction signed = unsigned.Sign(_paymentKey);
+        byte[] signedBytes = Chrysalis.Codec.Serialization.CborSerializer.Serialize(signed);
+        Console.WriteLine($"  Signed tx size: {signedBytes.Length} bytes");
+        string fullHex = Convert.ToHexStringLower(signedBytes);
+        Console.WriteLine($"  Full tx hex: {fullHex}");
         string txId = await _provider.SubmitTransactionAsync(signed);
         Console.WriteLine($"  TxHash: {txId}");
         return txId;

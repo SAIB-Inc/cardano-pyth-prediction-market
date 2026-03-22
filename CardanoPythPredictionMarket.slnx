@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/PredictionMarket.Bot/PredictionMarket.Bot.csproj" />
+  <Project Path="src/PredictionMarket.Cli/PredictionMarket.Cli.csproj" />
+  <Project Path="src/PredictionMarket.Web/PredictionMarket.Web.csproj" />
+  <Project Path="src/PredictionMarket/PredictionMarket.csproj" />
+</Solution>

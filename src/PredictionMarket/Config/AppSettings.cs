@@ -9,6 +9,10 @@ public class AppSettings
     public string FeedId { get; set; } = "BTC/USD";
     public int Exponent { get; set; } = -8;
 
+    // Pyth Lazer
+    public string? PythPolicyId { get; set; }
+    public string PythApiKey { get; set; } = "";
+
     // Deploy references (populated after deploy commands)
     public string? MarketDeployTxHash { get; set; }
     public ulong MarketDeployIndex { get; set; }

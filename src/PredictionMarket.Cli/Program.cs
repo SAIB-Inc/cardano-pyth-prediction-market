@@ -18,6 +18,8 @@ var settings = new AppSettings
     OracleNftPolicyId = Env("ORACLE_NFT_POLICY_ID", null),
     OracleStateTxHash = Env("ORACLE_STATE_TX_HASH", null),
     OracleStateIndex = ulong.Parse(Env("ORACLE_STATE_INDEX", "0") ?? "0"),
+    PythPolicyId = Env("PYTH_POLICY_ID", null),
+    PythApiKey = Env("PYTH_API_KEY", "") ?? "",
 };
 
 // ── Services ─────────────────────────────────────────────────────────────────
@@ -25,6 +27,7 @@ var settings = new AppSettings
 var wallet = new WalletService(settings);
 var httpClient = new HttpClient();
 var priceService = new BinancePriceService(settings, httpClient);
+var pythService = new PythPriceService(settings, httpClient);
 var deployService = new DeployService(wallet, settings);
 var marketService = new MarketService(wallet, priceService, settings);
 var cycleService = new MarketCycleService(marketService, wallet, settings);
@@ -62,16 +65,23 @@ try
             string scriptHash = RequireArg(args, 1, "oracle script hash hex");
             string deployTx = settings.OracleDeployTxHash ?? RequireArg(args, 2, "oracle deploy tx hash");
             ulong deployIdx = args.Length > 3 ? ulong.Parse(args[3]) : settings.OracleDeployIndex;
-            await deployService.RegisterOracleStakeCredential(scriptHash, deployTx, deployIdx);
+            await deployService.RegisterStakeCredential(scriptHash, deployTx, deployIdx);
             break;
         }
 
-        case "create-oracle-state":
+        case "test-deploy":
         {
-            string feedId = args.Length > 1 ? args[1] : settings.FeedId;
-            var (txHash, index, nftPolicy) = await deployService.CreateOracleState(feedId);
-            Console.WriteLine($"\n  Set env: ORACLE_STATE_TX_HASH={txHash} ORACLE_STATE_INDEX={index}");
-            Console.WriteLine($"  NFT Policy: {nftPolicy}");
+            var (txHash, index, scriptHash) = await deployService.DeployPythTest();
+            Console.WriteLine($"  Script hash: {scriptHash}");
+            break;
+        }
+
+        case "test-contract":
+        {
+            string deployTx = RequireArg(args, 1, "pyth_test deploy tx hash");
+            ulong deployIdx = ulong.Parse(RequireArg(args, 2, "pyth_test deploy index"));
+            string feedId = args.Length > 3 ? args[3] : settings.FeedId;
+            await deployService.TestPythContract(pythService, feedId, deployTx, deployIdx);
             break;
         }
 
